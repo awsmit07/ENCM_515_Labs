@@ -24,12 +24,13 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include <stdint.h>
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
 #define NUMBER_OF_TAPS	220
 #define BUFFER_SIZE 32
-#define FUNCTIONAL_TEST 1 // uncomment this flag if we want to test the code without the interrupt
+//#define FUNCTIONAL_TEST 1 // uncomment this flag if we want to test the code without the interrupt
 
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
@@ -81,6 +82,7 @@ extern I2S_HandleTypeDef       hAudioOutI2s;
 static void SystemClock_Config(void);
 static void GPIOA_Init(void);
 static int16_t ProcessSample(int16_t newsample, int16_t* history);
+static int16_t ProcessSample3(int16_t newsample, int16_t* history);
 /* Private functions ---------------------------------------------------------*/
 
 /**
@@ -171,8 +173,9 @@ int main(void)
 #ifndef FUNCTIONAL_TEST
 	if (new_sample_flag == 1) {
 #endif
-
+		ITM_Port32(31) = 1;
 		filteredSampleL = ProcessSample(newSampleL,history_l); // "L"
+		ITM_Port32(30) = 2;
 		new_sample_flag = 0;
 		if (i < NUMBER_OF_TAPS-1) {
 			filteredSampleL = 0;
@@ -370,6 +373,36 @@ static int16_t ProcessSample(int16_t newsample, int16_t* history) {
 	int32_t accumulator = 0;
 	for (tap = 0; tap < NUMBER_OF_TAPS; tap++) {
 		accumulator += (int32_t)filter_coeffs[tap] * (int32_t)history[tap];
+	}
+
+	// shuffle things along for the next one?
+	for(tap = NUMBER_OF_TAPS-2; tap > -1; tap--) {
+		history[tap+1] = history[tap];
+	}
+
+	if (accumulator > 0x3FFFFFFF) {
+		accumulator = 0x3FFFFFFF;
+		overflow_count++;
+	} else if (accumulator < -0x40000000) {
+		accumulator = -0x40000000;
+		underflow_count++;
+	}
+
+	int16_t temp = (int16_t)(accumulator >> 15);
+
+	return temp;
+}
+
+static int16_t ProcessSample3(int16_t newsample, int16_t* history)
+{
+  // set the new sample as the head
+	history[0] = newsample;
+
+	// set up and do our convolution
+	int tap = 0;
+	int32_t accumulator = 0;
+	for (tap = 0; tap < NUMBER_OF_TAPS; tap+=2) {
+		accumulator = __SMLAD(((int32_t*) filter_coeffs)[tap], ((int32_t*) history)[tap], accumulator);
 	}
 
 	// shuffle things along for the next one?
