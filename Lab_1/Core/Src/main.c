@@ -58,6 +58,7 @@ SPI_HandleTypeDef hspi1;
 
 /* This is a pointer to our input data */
 float32_t* data = DATA_START_ADDRESS;
+//uint16_t* data = DATA_START_ADDRESS;
 
 /* Here are our filter taps (as float32_t) */
 static float32_t filter_taps[31] = {
@@ -100,6 +101,8 @@ static float32_t filter_taps[31] = {
 /* let's have our history and output arrays defined somewhere */
 float32_t history[31];
 float32_t newdata[NUMBER_OF_SAMPLES];
+//uint16_t history[31];
+//uint16_t newdata[NUMBER_OF_SAMPLES];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -115,12 +118,14 @@ void MX_USB_HOST_Process(void);
 /* USER CODE BEGIN PFP */
 /* this the function prototype for initializing the filter (specifically the history) */
 void FloatFilterInit(void);
+void FixedFilterInit(void);
 
 /* This is the function prototype that does the filtering given a new sample.
  * The filter should shuffle the history values (which it can because history is global
  * This function should return a new output
  */
 float32_t FloatFilterGet(float new_sample);
+uint16_t FixedFilterGet(uint16_t new_sample);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -188,7 +193,36 @@ float32_t FloatFilterGet(float32_t newsample) {
 	}
 
 	// shuffle the history along for the next one?
-	for(int i = 1; i < 31; i++)
+	for(int i = 30; i > 0; i--)
+	{
+		history[i] = history[i-1];
+	}
+
+	return accumulator;
+}
+
+void FixedFilterInit(){
+	for (int i = 30; i > 0; i--)
+		{
+			history[i] = *data;
+			data++;
+		}
+}
+
+uint16_t FixedFilterGet(uint16_t newSample){
+	// set the new sample as the head
+	history[0] = newSample;
+	uint32_t accumulator = 0;
+	// set up and do our convolution
+	for(int i = 0; i < 31; i++)
+	{
+		accumulator += (uint32_t)history[i] * (uint32_t)filter_taps[i];
+	}
+
+	accumulator = accumulator >> 15;
+
+	// shuffle the history along for the next one?
+	for(int i = 30; i > 0; i--)
 	{
 		history[i] = history[i-1];
 	}
@@ -237,14 +271,21 @@ int main(void)
 //  printf("Andy Smit, Colton Giesbrecht, 2023-03-02, Why did the DSP Engineer get stuck in the revolving door? Because he couldn't stop convolving!\n");
   HAL_SuspendTick();
 
+  //ITM_Port32(31) = 1;
+  //CMSISExperiment();
+  //ITM_Port32(31) = 2;
+  FloatFilterInit();
+  //FixedFilterInit();
   ITM_Port32(31) = 1;
-  CMSISExperiment();
-  ITM_Port32(31) = 2;
-
-  for(int i=30; i < NUMBER_OF_SAMPLES; i++)
+  for(int i=31; i < NUMBER_OF_SAMPLES; i++)
   {
 	  newdata[i] = FloatFilterGet(*(data++));
+	  //newdata[i] = FixedFilterGet(*(data)++);
   }
+  ITM_Port32(31) = 2;
+
+  HAL_GPIO_TogglePin(LD3_GPIO_Port, LD3_Pin);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
