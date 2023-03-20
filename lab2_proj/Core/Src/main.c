@@ -24,6 +24,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include <stdint.h>
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
@@ -82,6 +83,8 @@ static void SystemClock_Config(void);
 static void GPIOA_Init(void);
 static int16_t ProcessSample(int16_t newsample, int16_t* history);
 static int16_t ProcessSample2(int16_t newsample, int16_t* history);
+static int16_t ProcessSample3(int16_t newsample, int16_t* history);
+static int16_t ProcessSample4(int16_t newsample, int16_t* history);
 /* Private functions ---------------------------------------------------------*/
 
 /**
@@ -176,7 +179,6 @@ int main(void)
 		//filteredSampleL = ProcessSample(newSampleL,history_l); // "L"
 		filteredSampleL = ProcessSample2(newSampleL,history_l);
 		ITM_Port32(31) = 1;
-		//
 		new_sample_flag = 0;
 		if (i < NUMBER_OF_TAPS-1) {
 			filteredSampleL = 0;
@@ -426,6 +428,62 @@ static int16_t ProcessSample2(int16_t newsample, int16_t* history){
 		int16_t temp = (int16_t)(accumulator >> 15);
 
 		return temp;
+}
+
+static int16_t ProcessSample3(int16_t newsample, int16_t* history)
+{
+  // set the new sample as the head
+	history[0] = newsample;
+
+	// set up and do our convolution
+	int tap = 0;
+	int32_t accumulator = 0;
+	for (tap = 0; tap < NUMBER_OF_TAPS; tap+=2) {
+		accumulator = __SMLAD(((int32_t*) filter_coeffs)[tap], ((int32_t*) history)[tap], accumulator);
+	}
+
+	// shuffle things along for the next one?
+	for(tap = NUMBER_OF_TAPS-2; tap > -1; tap--) {
+		history[tap+1] = history[tap];
+	}
+
+	if (accumulator > 0x3FFFFFFF) {
+		accumulator = 0x3FFFFFFF;
+		overflow_count++;
+	} else if (accumulator < -0x40000000) {
+		accumulator = -0x40000000;
+		underflow_count++;
+	}
+
+	int16_t temp = (int16_t)(accumulator >> 15);
+
+	return temp;
+}
+
+static int16_t ProcessSample4(int16_t newsample, int16_t* history) {
+  static uint8_t hist_index = 0;
+	// set the new sample as the head
+	history[hist_index] = newsample;
+  hist_index = (hist_index+1) % NUMBER_OF_TAPS;
+
+	// set up and do our convolution
+	int tap = 0;
+	int32_t accumulator = 0;
+	for (tap = 0; tap < NUMBER_OF_TAPS; tap++) {
+		accumulator += (int32_t)filter_coeffs[tap] * (int32_t)history[tap];
+	}
+
+	if (accumulator > 0x3FFFFFFF) {
+		accumulator = 0x3FFFFFFF;
+		overflow_count++;
+	} else if (accumulator < -0x40000000) {
+		accumulator = -0x40000000;
+		underflow_count++;
+	}
+
+	int16_t temp = (int16_t)(accumulator >> 15);
+
+	return temp;
 }
 
 #ifdef USE_FULL_ASSERT
