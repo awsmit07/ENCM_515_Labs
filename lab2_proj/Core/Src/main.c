@@ -30,7 +30,7 @@
 /* Private define ------------------------------------------------------------*/
 #define NUMBER_OF_TAPS	220
 #define BUFFER_SIZE 32
-//#define FUNCTIONAL_TEST 1 // uncomment this flag if we want to test the code without the interrupt
+#define FUNCTIONAL_TEST 1 // uncomment this flag if we want to test the code without the interrupt
 
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
@@ -85,6 +85,8 @@ static int16_t ProcessSample(int16_t newsample, int16_t* history);
 static int16_t ProcessSample2(int16_t newsample, int16_t* history);
 static int16_t ProcessSample3(int16_t newsample, int16_t* history);
 static int16_t ProcessSample4(int16_t newsample, int16_t* history);
+static int16_t ProcessSample5(int16_t newsample, int16_t* history);
+
 /* Private functions ---------------------------------------------------------*/
 
 /**
@@ -439,7 +441,7 @@ static int16_t ProcessSample3(int16_t newsample, int16_t* history)
 	int tap = 0;
 	int32_t accumulator = 0;
 	for (tap = 0; tap < NUMBER_OF_TAPS; tap+=2) {
-		accumulator = __SMLAD(((int32_t*) filter_coeffs)[tap], ((int32_t*) history)[tap], accumulator);
+		accumulator = __SMLAD(*(int32_t*)(filter_coeffs+tap), *(int32_t*)(history+tap), accumulator);
 	}
 
 	// shuffle things along for the next one?
@@ -464,13 +466,42 @@ static int16_t ProcessSample4(int16_t newsample, int16_t* history) {
   static uint8_t hist_index = 0;
 	// set the new sample as the head
 	history[hist_index] = newsample;
-  hist_index = (hist_index+1) % NUMBER_OF_TAPS;
 
 	// set up and do our convolution
 	int tap = 0;
 	int32_t accumulator = 0;
 	for (tap = 0; tap < NUMBER_OF_TAPS; tap++) {
-		accumulator += (int32_t)filter_coeffs[tap] * (int32_t)history[tap];
+		accumulator += (int32_t)filter_coeffs[tap] * (int32_t)history[hist_index];
+    hist_index = (hist_index-1) ? (hist_index-1): NUMBER_OF_TAPS - 1;
+	}
+
+	if (accumulator > 0x3FFFFFFF) {
+		accumulator = 0x3FFFFFFF;
+		overflow_count++;
+	} else if (accumulator < -0x40000000) {
+		accumulator = -0x40000000;
+		underflow_count++;
+	}
+
+	int16_t temp = (int16_t)(accumulator >> 15);
+
+	return temp;
+}
+
+static int16_t ProcessSample5(int16_t newsample, int16_t* history) {
+	static uint8_t hist_index = 0;
+	static uint8_t odd=0;
+	// set the new sample as the head
+	history[hist_index+odd] = newsample;
+	odd = !odd;
+
+	// set up and do our convolution
+	int tap = 0;
+	int32_t accumulator = 0;
+	for (tap = 0; tap < NUMBER_OF_TAPS; tap+=2) {
+			accumulator = __SMLAD(*(int32_t*)(filter_coeffs+tap), *(int32_t*)(history+hist_index), accumulator);
+//			accumulator += (int32_t)filter_coeffs[tap] * (int32_t)history[hist_index];
+			hist_index = (hist_index-2) ? (hist_index-2): NUMBER_OF_TAPS - 2;
 	}
 
 	if (accumulator > 0x3FFFFFFF) {
