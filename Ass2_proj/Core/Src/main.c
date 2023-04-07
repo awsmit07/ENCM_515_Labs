@@ -29,8 +29,8 @@
 /* Private define ------------------------------------------------------------*/
 #define NUMBER_OF_TAPS	220
 #define BUFFER_SIZE 32
-//#define FUNCTIONAL_TEST 1 // uncomment this flag if we want to test the code without the interrupt
-#define PROCESS_BLOCK_FUNC 1
+#define FUNCTIONAL_TEST 1 // uncomment this flag if we want to test the code without the interrupt
+#define PROCESS_BLOCK_FUNC 3
 
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
