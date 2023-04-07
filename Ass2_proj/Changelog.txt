@@ -1,0 +1,8 @@
+-Added FRAME_SIZE
+-Changed newSample to newSampleFrame
+-Increased timer by multiplying period by FRAME_SIZE
+-Changed timer handler function to filling newSampleFrame
+-Changed timer bypass to fill newSampleFrame instead of newSample
+-Increased sampleHistory arrays by FRAME_SIZE
+-Increased BUFFER_SIZE to 64 to allow for enough data to be loaded that the history get filled.
+-Changed number of taps to 32
