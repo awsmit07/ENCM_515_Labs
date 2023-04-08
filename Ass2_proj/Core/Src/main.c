@@ -30,7 +30,10 @@
 #define NUMBER_OF_TAPS	220
 #define BUFFER_SIZE 32
 #define FUNCTIONAL_TEST 1 // uncomment this flag if we want to test the code without the interrupt
-#define PROCESS_BLOCK_FUNC 3
+
+
+//MARKER!!! Change PROCESS_BLOCK_FUNC to run tests 1-4. It uses preprocessor if statements to reconfigure the code for each test.
+#define PROCESS_BLOCK_FUNC 1
 
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
@@ -48,16 +51,16 @@ TIM_OC_InitTypeDef   sConfig;
 uint32_t uwPrescalerValue = 0;
 uint32_t uwCapturedValue = 0;
 
-#if PROCESS_BLOCK_FUNC == 1
+#if PROCESS_BLOCK_FUNC == 1	//Test1: Basic ProcessBlock Function w/ a frame size of 3
 #define FRAME_SIZE 3
 static void ProcessBlock(int16_t *sampleFrame, int16_t *history, int16_t *nextOutput);
-#elif PROCESS_BLOCK_FUNC == 2
+#elif PROCESS_BLOCK_FUNC == 2 //Test2: Basic ProcessBlock Function w/ a frame size of 6
 #define FRAME_SIZE 16
 static void ProcessBlock(int16_t *sampleFrame, int16_t *history, int16_t *nextOutput);
-#elif PROCESS_BLOCK_FUNC == 3
+#elif PROCESS_BLOCK_FUNC == 3 //Test3: Unrolled ProcessBlock Function for a frame size of 3
 #define FRAME_SIZE 3
 static void ProcessBlock3(int16_t *sampleFrame, int16_t *history, int16_t *nextOutput);
-#elif PROCESS_BLOCK_FUNC == 4
+#elif PROCESS_BLOCK_FUNC == 4 //Test4: Unrolled ProcessBlock Function for a frame size of 16
 #define FRAME_SIZE 16
 static void ProcessBlock4(int16_t *sampleFrame, int16_t *history, int16_t *nextOutput);
 #endif
@@ -172,7 +175,6 @@ int main(void)
   static int i = 0;
   static int k = 0;
   //static int start = 0;
-  //int32_t *nextOutput = filteredOutBufferA;
 
   while (1) {
 
@@ -339,6 +341,7 @@ void Toggle_Leds(void)
 // the idea of receiving a new sample peridiocally
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
+	//Skips handler code FRAM_SIZE number of times to adjusted the timer to the frame size to maintain the sample frequency
 	static int frameCount = 0;
 	if(++frameCount == FRAME_SIZE){
 		frameCount = 0;
@@ -346,7 +349,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	else{
 		return;
 	}
+	//This ITM_Port call is for tuning the timer
 	ITM_Port32(31)=3;
+
 //  BSP_LED_Toggle(LED4);
 //  HAL_GPIO_TogglePin(SCOPE_CHECK_GPIO_Port, SCOPE_CHECK_Pin);
 
@@ -438,11 +443,11 @@ static int16_t ProcessSample(int16_t newsample, int16_t* history) {
 #if PROCESS_BLOCK_FUNC == 1 || PROCESS_BLOCK_FUNC == 2
 static void ProcessBlock(int16_t *sampleFrame, int16_t *history, int16_t *nextOutput){
 
-	// set up convolution vars
+	// set up convolution vars and multiple accumulators
 	int tap = 0;
 	int32_t accumulator[FRAME_SIZE];
 
-	// set the new sample as the head
+	// set the new block of samples as the head of the history array
 	for(int i = 0; i < FRAME_SIZE; i++){
 		history[i] = sampleFrame[FRAME_SIZE - 1 - i];
 		accumulator[i] = 0;
@@ -450,12 +455,13 @@ static void ProcessBlock(int16_t *sampleFrame, int16_t *history, int16_t *nextOu
 
 	//Calculate tap values and accumulate
 	for(tap = 0; tap < NUMBER_OF_TAPS; tap++) {
+		//uses coeff on each sample in the block
 		for(int i = 0; i < FRAME_SIZE; i++){
 			accumulator[i] += (int32_t)filter_coeffs[tap] * (int32_t)history[tap+i];
 		}
 	}
 
-	// shuffle things along for the next one?
+	//move history down a block so that the next block will fit at the head
 	for(tap = NUMBER_OF_TAPS + FRAME_SIZE - 2; tap >= FRAME_SIZE; tap--) {
 		history[tap] = history[tap-FRAME_SIZE];
 	}
@@ -470,17 +476,18 @@ static void ProcessBlock(int16_t *sampleFrame, int16_t *history, int16_t *nextOu
 			underflow_count++;
 		}
 		int16_t temp = (int16_t)(accumulator[i] >> 15);
+		//Reverse (corrects order) and put outputs into output buffer
 		nextOutput[FRAME_SIZE-1-i] = temp;
 	}
 }
 
 #elif PROCESS_BLOCK_FUNC == 3
 static void ProcessBlock3(int16_t *sampleFrame, int16_t *history, int16_t *nextOutput){
-	// set up convolution vars
+	// set up convolution vars and multiple accumulators
 	int tap = 0;
 	int32_t accumulator[FRAME_SIZE];
 
-	// set the new sample as the head
+	// set the new block of samples at the head
 	for(int i = 0; i < FRAME_SIZE; i++){
 		history[i] = sampleFrame[FRAME_SIZE - 1 - i];
 		accumulator[i] = 0;
@@ -488,12 +495,13 @@ static void ProcessBlock3(int16_t *sampleFrame, int16_t *history, int16_t *nextO
 
 	//Calculate tap values and accumulate
 	for(tap = 0; tap < NUMBER_OF_TAPS; tap++) {
+		//all 3 samples are processed without a for loop
 		accumulator[0] += (int32_t)filter_coeffs[tap] * (int32_t)history[tap+0];
 		accumulator[1] += (int32_t)filter_coeffs[tap] * (int32_t)history[tap+1];
 		accumulator[2] += (int32_t)filter_coeffs[tap] * (int32_t)history[tap+2];
 	}
 
-	// shuffle things along for the next one?
+	//move history down a block so that the next block will fit at the head
 	for(tap = NUMBER_OF_TAPS + FRAME_SIZE - 2; tap >= FRAME_SIZE; tap--) {
 		history[tap] = history[tap-FRAME_SIZE];
 	}
@@ -508,17 +516,18 @@ static void ProcessBlock3(int16_t *sampleFrame, int16_t *history, int16_t *nextO
 			underflow_count++;
 		}
 		int16_t temp = (int16_t)(accumulator[i] >> 15);
+		//Reverse (corrects order) and put outputs into output buffer
 		nextOutput[FRAME_SIZE-1-i] = temp;
 	}
 }
 
 #elif PROCESS_BLOCK_FUNC == 4
 static void ProcessBlock4(int16_t *sampleFrame, int16_t *history, int16_t *nextOutput){
-	// set up convolution vars
+	// set up convolution vars and multiple accumulators
 	int tap = 0;
 	int32_t accumulator[FRAME_SIZE];
 
-	// set the new sample as the head
+	// set the new block of samples as the head
 	for(int i = 0; i < FRAME_SIZE; i++){
 		history[i] = sampleFrame[FRAME_SIZE - 1 - i];
 		accumulator[i] = 0;
@@ -526,6 +535,7 @@ static void ProcessBlock4(int16_t *sampleFrame, int16_t *history, int16_t *nextO
 
 	//Calculate tap values and accumulate
 	for(tap = 0; tap < NUMBER_OF_TAPS; tap++) {
+		//all 16 samples are processed without a for loop
 		accumulator[0] += (int32_t)filter_coeffs[tap] * (int32_t)history[tap+0];
 		accumulator[1] += (int32_t)filter_coeffs[tap] * (int32_t)history[tap+1];
 		accumulator[2] += (int32_t)filter_coeffs[tap] * (int32_t)history[tap+2];
@@ -545,7 +555,7 @@ static void ProcessBlock4(int16_t *sampleFrame, int16_t *history, int16_t *nextO
 
 	}
 
-	// shuffle things along for the next one?
+	//move history down a block so that the next block will fit at the head
 	for(tap = NUMBER_OF_TAPS + FRAME_SIZE - 2; tap >= FRAME_SIZE; tap--) {
 		history[tap] = history[tap-FRAME_SIZE];
 	}
@@ -560,6 +570,7 @@ static void ProcessBlock4(int16_t *sampleFrame, int16_t *history, int16_t *nextO
 			underflow_count++;
 		}
 		int16_t temp = (int16_t)(accumulator[i] >> 15);
+		//Reverse (corrects order) and put outputs into output buffer
 		nextOutput[FRAME_SIZE-1-i] = temp;
 	}
 }
